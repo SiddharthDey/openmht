@@ -1,3 +1,5 @@
+# python cli.py ../SampleData/SampleInput.csv ../SampleData/SampleOutput_2.csv ../params.txt --plot
+
 #!/usr/bin/env python
 import sys
 import argparse
