@@ -6,6 +6,11 @@
 # from .kalman_filter import KalmanFilter
 from weighted_graph import WeightedGraph
 from kalman_filter import KalmanFilter
+import numpy as np
+import scipy.sparse as sp
+import networkx as nx
+import numpy as np
+from gurobi_optimods.mwis import maximum_weighted_independent_set
 
 from copy import deepcopy
 
@@ -18,6 +23,27 @@ logging.basicConfig(level=logging.INFO,
 __author__ = "Jon Perdomo"
 __license__ = "GPL-3.0"
 
+def compute_adjacency_matrix(conflicting_tracks: tuple, n_tracks: int):
+    adjacency_matrix = np.ones((n_tracks, n_tracks))
+
+    for track_a, track_b in conflicting_tracks:
+        adjacency_matrix[track_a, track_b] = 0
+        adjacency_matrix[track_b, track_a] = 0
+
+    # all the diagonal elements are 0
+    np.fill_diagonal(adjacency_matrix, 0)
+
+    return adjacency_matrix
+
+# def compute_adjacency_matrix(conflicting_tracks: tuple, n_tracks: int):
+#     adjacency_matrix = np.zeros((n_tracks, n_tracks))
+
+#     for track_a, track_b in conflicting_tracks:
+#         adjacency_matrix[track_a, track_b] = 1
+#         adjacency_matrix[track_b, track_a] = 1
+
+#     return adjacency_matrix
+        
 
 class MHT:
     """Main class for the MHT algorithm."""
@@ -32,12 +58,38 @@ class MHT:
         """
         logging.info("Calculating MWIS...")
         gh_graph = WeightedGraph()
+        weights = []
         for index, kalman_filter in enumerate(track_trees):
             gh_graph.add_weighted_vertex(str(index), kalman_filter.get_track_score())
+            weights.append(kalman_filter.get_track_score())
 
         gh_graph.set_edges(conflicting_tracks)
 
         mwis_ids = gh_graph.mwis()
+        logging.info("MWIS complete.")
+
+        return mwis_ids
+    
+    def __global_hypothesis_2(self, track_trees, conflicting_tracks):
+        """
+        Generate a global hypothesis by finding the maximum weighted independent
+        set of a graph with tracks as vertices, and edges between conflicting tracks.
+        """
+        logging.info("Calculating MWIS...")
+        # gh_graph = WeightedGraph()
+        node_weights = []
+        for index, kalman_filter in enumerate(track_trees):
+            node_weights.append(kalman_filter.get_track_score())
+            # gh_graph.add_weighted_vertex(str(index), kalman_filter.get_track_score())
+
+        node_weights = np.array(node_weights)
+        adjacency_matrix = compute_adjacency_matrix(conflicting_tracks, len(node_weights))
+        adjacency_matrix = sp.triu(adjacency_matrix)
+        mwis_ids = maximum_weighted_independent_set(adjacency_matrix, node_weights)
+        mwis_ids = set(mwis_ids)
+        # gh_graph.set_edges(conflicting_tracks)
+
+        # mwis_ids = gh_graph.mwis()
         logging.info("MWIS complete.")
 
         return mwis_ids
@@ -124,7 +176,8 @@ class MHT:
             # Prune subtrees that diverge from the solution_trees at frame k-N
             prune_index = max(0, frame_index-n_scan)
             conflicting_tracks = self.__get_conflicting_tracks(track_detections)
-            solution_ids = self.__global_hypothesis(kalman_filters, conflicting_tracks)
+            # solution_ids = self.__global_hypothesis(kalman_filters, conflicting_tracks)
+            solution_ids = self.__global_hypothesis_2(kalman_filters, conflicting_tracks)
             non_solution_ids = list(set(range(len(kalman_filters))) - set(solution_ids))
             del solution_coordinates[:]
             n_scan_prune_count = 0
